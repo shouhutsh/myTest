@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.rmi.server.ExportException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +35,7 @@ public class CreateWebService {
 
     @Before
     public void setUp() {
-        ExportPath = "D:\\code\\workspace\\spring-webservice\\src\\main\\java";
+        ExportPath = "D:\\code\\develop\\webservice\\src\\main\\java";
 
         projects = new HashMap<String, String>();
         projects.put("eaccount", "D:\\code\\develop\\DQCitizenWallet\\eaccount\\eaccount_common\\trunk\\rs-common\\src");
@@ -43,14 +44,14 @@ public class CreateWebService {
     }
 
     @Test
-    public void create() throws IOException {
+    public void create() throws Exception {
         for (Map.Entry<String, String> e : projects.entrySet()) {
             Map<String, List<String>> javaPackages = findFile(e.getValue(), FileType);
             for (Map.Entry<String, List<String>> p : javaPackages.entrySet()) {
                 String packageName = "ws." + p.getKey();
                 for (String javaPath : p.getValue()) {
                     Map<String, BufferedWriter> createFiles = initFile(packageName, javaPath);
-                    parseAndWrite(javaPath, createFiles);
+                    parseAndWrite(p.getKey(), javaPath, createFiles);
                     closeFile(createFiles);
                 }
             }
@@ -66,22 +67,58 @@ public class CreateWebService {
         }
     }
 
-    private void parseAndWrite(String javaPath, Map<String, BufferedWriter> createFiles) throws IOException {
-        final String IpMethodTemplate = "\npublic %s %s(%s)%s{\n%s %s.%s(%s);\n}\n";
-        final String SetTemplate = "\n%CLASS %VAR;\n@Autowired\npublic void set%CLASS(%CLASS %VAR){\nthis.%VAR = %VAR;\n}\n";
+    private void parseAndWrite(String packageName, String javaPath, Map<String, BufferedWriter> createFiles) throws Exception {
+        final String IfMethodTemplate = "\n%s %s(%s)%s;\n";
+        final String SetTemplate = "\n%PACKAGE.%CLASS %VAR;\n@Autowired\npublic void set%CLASS(%PACKAGE.%CLASS %VAR){\nthis.%VAR = %VAR;\n}\n";
 
-        Pattern p = Pattern.compile("([^ ]+) ([^ (]+)\\((.*?)\\)(.*?);");
+        Pattern p = Pattern.compile("([^ \t]+) ([^ (]+)\\((.*?)\\)(.*?);");
         String className = getJavaName(javaPath);
         String classVar = getVariableName(className);
 
-        createFiles.get(IMPL).write(SetTemplate.replaceAll("%CLASS", className).replaceAll("%VAR", classVar));
+        Map<String, Integer> functionNames = new HashMap<String, Integer>();
+        createFiles.get(IMPL).write(SetTemplate.replaceAll("%PACKAGE", packageName).replaceAll("%CLASS", className).replaceAll("%VAR", classVar));
         for (String line : Files.readAllLines(Paths.get(javaPath), StandardCharsets.UTF_8)) {
             Matcher m = p.matcher(line);
             if (m.find()) {
-                createFiles.get(INTERFACE).write(line + "\n");
-                createFiles.get(IMPL).write(String.format(IpMethodTemplate,
-                        m.group(1), m.group(2), m.group(3), m.group(4), "void".equals(m.group(1)) ? "" : "return", classVar, m.group(2), getParameter(m.group(3))));
+                if(m.group(1).contains("Grid")) continue;
+                String returnType = getReturnType(line);
+                String functionName = getFunctionName(m.group(2), functionNames);
+                createFiles.get(INTERFACE).write(String.format(IfMethodTemplate, returnType, functionName, m.group(3), m.group(4)));
+                createFiles.get(IMPL).write(String.format(getIpMethodTemplate(returnType),
+                        returnType, functionName, m.group(3), m.group(4), "void".equals(m.group(1)) ? "" : "return", classVar, m.group(2), getParameter(m.group(3))));
             }
+        }
+    }
+
+    private String getReturnType(String line) throws Exception {
+        Pattern p = Pattern.compile("([^ \t]+) [^ (]+\\(");
+        Matcher m = p.matcher(cleanPointBracket(line));
+        if(m.find()){
+            String returnType = m.group(1);
+            if(returnType.contains("Map")){
+                returnType = "ws.util.WSMap";
+            }
+            return returnType;
+        }
+        throw new Exception();
+    }
+
+    private String getIpMethodTemplate(String returnType){
+        if(returnType.contains("WSMap")){
+            return "\npublic %s %s(%s)%s{\n%s new ws.util.WSMap(%s.%s(%s));\n}\n";
+        }else{
+            return "\npublic %s %s(%s)%s{\n%s %s.%s(%s);\n}\n";
+        }
+    }
+
+    private String getFunctionName(String function, Map<String, Integer> functionNames){
+        Integer i = functionNames.get(function);
+        if(null == i){
+            functionNames.put(function, new Integer(0));
+            return function;
+        }else{
+            ++i;
+            return function + i;
         }
     }
 
@@ -102,8 +139,8 @@ public class CreateWebService {
         int count = 0;
         for (char c : str.toCharArray()) {
             if ('<' == c) ++count;
-            if ('>' == c) --count;
             if (count == 0) sb.append(c);
+            if ('>' == c) --count;
         }
         return sb.toString();
     }
@@ -137,7 +174,6 @@ public class CreateWebService {
         if (!dir.exists()) dir.mkdirs();
     }
 
-    // FIXME 没有自动生成 dubbo 和 webservice 配置文件
     private Map<String, BufferedWriter> initFile(String packageName, String javaPath) throws IOException {
         final String InitIfTemplate = "package %s;\n%s\nimport javax.jws.WebService;\n@WebService\npublic interface %s {\n";
         final String InitIpTemplate = "package %s;\n%s\nimport javax.jws.WebService;\nimport org.springframework.beans.factory.annotation.Autowired;\n@SuppressWarnings(\"ALL\")\n@WebService(endpointInterface = \"%s.%s\")\npublic class %s implements %s {\n";
@@ -147,14 +183,6 @@ public class CreateWebService {
         String imports = getImports(javaPath);
         String interName = getClassName(getJavaName(javaPath));
         String implName = interName + "Impl";
-
-        String WebServiceTemplate = "<jaxws:server id=\"%s\" serviceClass=\"%s\" address=\"/%s\">\n" +
-                "<jaxws:serviceBean><ref bean=\"%s\"/></jaxws:serviceBean></jaxws:server>";
-
-        //webservice.xml
-        System.out.println(String.format(WebServiceTemplate, getVariableName(implName), packageName + "." + implName, interName, getVariableName(interName)));
-        //dubbo
-        System.out.println(String.format("<dubbo:reference interface=\"%s\" id=\"%s\"/>", packageName + "." + interName, getVariableName(interName)));
 
         String createPath = ExportPath + PathSplitFlag + packageName.replaceAll("\\.", "\\\\");
         createDir(createPath);
