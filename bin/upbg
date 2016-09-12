@@ -1,0 +1,12 @@
+#!/bin/bash
+# 下载必应每日一图作为壁纸
+
+URL="http://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1"
+
+FILE="${HOME}/Pictures/bing_`date '+%Y-%m-%d'`.jpg"
+
+if ! [ -f $FILE ]; then
+	IMG=`curl -s $URL | jq -r ".images[0].url"`
+	wget -q $IMG -O $FILE
+	gsettings set org.gnome.desktop.background picture-uri "file:$FILE"
+fi
