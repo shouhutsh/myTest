@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ $# != 1 ]; then
+	echo "error"
+	exit -1
+fi
+
+URL="http://apis.baidu.com/apistore/iplookupservice/iplookup?ip=$1"
+
+echo -e `./apistore_get $URL`

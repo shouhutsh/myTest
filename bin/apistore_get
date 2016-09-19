@@ -1,0 +1,3 @@
+#!/bin/bash
+
+curl -s --get "$1" -H "apikey:$APIKEY"
