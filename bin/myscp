@@ -1,0 +1,72 @@
+#!/bin/bash
+
+#默认服务器配置项
+#    "服务器名称 端口号 IP地址 登录用户名 登录密码"
+CONFIGS=(
+)
+
+CONFIG_PATH=$HOME/.ssh/hosts.conf
+
+#读取自定义服务器配置文件（server_config）列表，合并服务器配置列表
+if [ -f $CONFIG_PATH ]; then
+	while read line
+	do
+		CONFIGS+=("$line")
+	done < $CONFIG_PATH
+fi
+
+#服务器配置数
+CONFIG_LENGTH=${#CONFIGS[*]}  #配置站点个数
+
+if [[ $CONFIG_LENGTH -le 0 ]] ;
+then
+    echo "未检测到服务器配置项!"
+    echo "请在脚本CONFIGS变量中配置或单独创建一个${CONFIG_PATH}文件并配置"
+    exit ;
+fi
+
+#服务器配置菜单
+function ConfigList(){
+    for ((i=0;i<${CONFIG_LENGTH};i++));
+    do
+        CONFIG=(${CONFIGS[$i]})
+        serverNum=$(($i+1))
+        echo "---(${serverNum})--${CONFIG[0]}(${CONFIG[2]})---"
+    done
+}
+
+#登录菜单
+function LoginMenu(){
+    ConfigList
+}
+
+#自动登录
+function AutoScp(){
+    args=("$@")
+    unset args[${#args[@]}-1]
+    files=`echo "${args[@]}"`
+    num=`echo -n "${!#}" | cut -d ':' -f 1`
+    path=`echo -n "${!#}" | cut -d ':' -f 2`
+    CONFIG=(${CONFIGS[$(($num-1))]})
+    expect -c "
+        spawn scp -P ${CONFIG[1]} $files ${CONFIG[3]}@${CONFIG[2]}:${path}
+        expect {
+            \"*assword\" {set timeout 6000; send \"${CONFIG[4]}\n\"; exp_continue ; sleep 3; }
+            \"yes/no\" {send \"yes\n\"; exp_continue;}
+            \"Last*\" {  send_user \"\n成功登录【${CONFIG[0]}】\n\";}
+        }
+
+    interact"
+    echo "您已退出【${CONFIG[0]}】"
+}
+
+# 程序入口
+if [ 0 -lt $# ]; then
+    if [ 'list' == ${!#} ]; then
+	LoginMenu
+    else
+        AutoScp $@
+    fi
+else
+    LoginMenu
+fi

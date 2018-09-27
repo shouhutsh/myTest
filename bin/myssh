@@ -5,7 +5,7 @@
 CONFIGS=(
 )
 
-CONFIG_PATH=$HOME/.sshlogin/hosts.conf
+CONFIG_PATH=$HOME/.ssh/hosts.conf
 
 #读取自定义服务器配置文件（server_config）列表，合并服务器配置列表
 if [ -f $CONFIG_PATH ]; then
