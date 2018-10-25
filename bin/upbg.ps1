@@ -52,11 +52,11 @@ key.Close();
 
 $URL="http://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=10"
 $TIME=Get-Date
-$FILE=-Join("${HOME}\Pictures\bing_", $TIME.Year, $TIME.Month, $TIME.Day, ".jpg")
+$FILE=-Join("${HOME}\Pictures\bing_", $TIME.ToString('yyyyMMdd'), ".jpg")
 if (!(Test-Path $FILE)) {
-	$DATA=Invoke-WebRequest $url
+	$DATA=Invoke-WebRequest $URL -UseBasicParsing
 	$JSON=ConvertFrom-Json($DATA)
 	$IMG_URL=-Join("http://www.bing.com", $JSON.images[0].url)
-	Invoke-WebRequest $IMG_URL -OutFile $FILE
+	Invoke-WebRequest $IMG_URL -OutFile $FILE -UseBasicParsing
 	Set-Wallpaper -Path $FILE
 }
